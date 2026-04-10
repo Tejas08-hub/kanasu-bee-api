@@ -1,7 +1,6 @@
 flask
 flask-cors
 numpy
-pillow
+tensorflow
 gunicorn
-tensorflow==2.15.0
-tf-keras
+pillow
