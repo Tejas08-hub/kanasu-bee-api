@@ -2,8 +2,8 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 import numpy as np
 import json, os
-import tf_keras
-from tf_keras.preprocessing import image as keras_image
+import tensorflow as tf
+from tensorflow.keras.utils import load_img, img_to_array
 
 app = Flask(__name__)
 CORS(app)
@@ -16,8 +16,8 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 print("Loading model...")
 try:
-    model = tf_keras.models.load_model(MODEL_PATH)
-    print("✅ Model loaded successfully!")
+    model = tf.keras.models.load_model(MODEL_PATH)
+    print("✅ Model loaded successfully")
 except Exception as e:
     print(f"❌ Model load failed: {e}")
     model = None
@@ -59,30 +59,16 @@ def predict():
     filepath = os.path.join(UPLOAD_DIR, file.filename)
     file.save(filepath)
 
-    img  = keras_image.load_img(filepath, target_size=(224, 224))
-    arr  = keras_image.img_to_array(img) / 255.0
+    img  = load_img(filepath, target_size=(224, 224))
+    arr  = img_to_array(img) / 255.0
     arr  = np.expand_dims(arr, axis=0)
 
     preds      = model.predict(arr, verbose=0)
     top_idx    = int(np.argmax(preds))
     top_class  = classes[top_idx]
     confidence = round(float(np.max(preds)) * 100, 2)
+    info       = disease_info[top_class]
 
-    if confidence < 60:
-        return jsonify({
-            "prediction" : "unclear",
-            "status"     : "Unclear Result",
-            "severity"   : "unknown",
-            "confidence" : confidence,
-            "description": "The image quality or angle made it hard to classify. Please retake the photo.",
-            "action"     : "Try again with a clearer, closer photo of the hive.",
-            "all_scores" : {classes[i]: round(float(preds[0][i]) * 100, 2) for i in range(len(classes))}
-        })
-
-    info = disease_info.get(top_class, {
-        "status": "Unknown", "severity": "unknown",
-        "description": "Could not classify.", "action": "Please try again."
-    })
     return jsonify({
         "prediction" : top_class,
         "status"     : info["status"],
@@ -90,7 +76,10 @@ def predict():
         "confidence" : confidence,
         "description": info["description"],
         "action"     : info["action"],
-        "all_scores" : {classes[i]: round(float(preds[0][i]) * 100, 2) for i in range(len(classes))}
+        "all_scores" : {
+            classes[i]: round(float(preds[0][i]) * 100, 2)
+            for i in range(len(classes))
+        }
     })
 
 @app.route('/health', methods=['GET'])
