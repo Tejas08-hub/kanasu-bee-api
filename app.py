@@ -36,6 +36,9 @@ def load_model_once():
         model = tf.keras.models.load_model(MODEL_PATH)
         print("✅ Model loaded")
 
+# ================= CONFIDENCE THRESHOLD =================
+CONFIDENCE_THRESHOLD = 70  # 🔥 You can tune (60–80)
+
 # ================= DISEASE INFO =================
 disease_info = {
     "healthy": {
@@ -80,7 +83,7 @@ def predict():
         if model is None:
             return jsonify({"error": "Model not loaded"}), 500
 
-        # 🔥 FIXED FILE HANDLING
+        # 🔥 FILE HANDLING
         if 'image' not in request.files:
             return jsonify({"error": "No image key found"}), 400
 
@@ -92,17 +95,31 @@ def predict():
         filepath = os.path.join(UPLOAD_DIR, file.filename)
         file.save(filepath)
 
-        # Preprocess
+        # ================= PREPROCESS =================
         img = load_img(filepath, target_size=(224, 224))
         arr = img_to_array(img) / 255.0
         arr = np.expand_dims(arr, axis=0)
 
-        # Predict
+        # ================= PREDICT =================
         preds = model.predict(arr, verbose=0)
+        confidence = round(float(np.max(preds)) * 100, 2)
         top_idx = int(np.argmax(preds))
         top_class = classes.get(top_idx, "unknown")
-        confidence = round(float(np.max(preds)) * 100, 2)
 
+        print(f"🔍 Prediction: {top_class}, Confidence: {confidence}")
+
+        # ================= 🔥 NON-BEE FILTER =================
+        if confidence < CONFIDENCE_THRESHOLD:
+            return jsonify({
+                "prediction": "invalid",
+                "status": "Not a bee image",
+                "severity": "none",
+                "confidence": confidence,
+                "description": "Uploaded image is not a bee or unclear.",
+                "action": "Please upload a clear bee image."
+            })
+
+        # ================= NORMAL OUTPUT =================
         info = disease_info.get(top_class, {
             "status": "Unknown",
             "severity": "unknown",
@@ -120,7 +137,7 @@ def predict():
         })
 
     except Exception as e:
-        print("❌ ERROR:", str(e))  # VERY IMPORTANT
+        print("❌ ERROR:", str(e))
         return jsonify({"error": str(e)}), 500
 
 
