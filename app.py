@@ -1,7 +1,8 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import numpy as np
-import json, os
+import json
+import os
 import tensorflow as tf
 from tensorflow.keras.utils import load_img, img_to_array
 
@@ -10,7 +11,7 @@ CORS(app)
 
 # ================= PATH SETUP =================
 BASE_PATH  = os.path.dirname(os.path.abspath(__file__))
-MODEL_PATH = os.path.join(BASE_PATH, "bee_model.keras")
+MODEL_PATH = os.path.join(BASE_PATH, "bee_model.h5")
 CLASS_PATH = os.path.join(BASE_PATH, "class_names.json")
 UPLOAD_DIR = os.path.join(BASE_PATH, "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -25,7 +26,7 @@ except Exception as e:
     print("❌ Class file error:", e)
     classes = {}
 
-# ================= MODEL (LAZY LOAD) =================
+# ================= LAZY MODEL LOAD =================
 model = None
 
 def load_model_once():
@@ -41,7 +42,7 @@ disease_info = {
         "status": "Healthy Colony",
         "severity": "low",
         "description": "Your bee colony appears healthy.",
-        "action": "Continue regular monitoring."
+        "action": "Continue monitoring."
     },
     "varroa": {
         "status": "Varroa Mite Infestation",
@@ -51,9 +52,9 @@ disease_info = {
     },
     "other_issue": {
         "status": "Colony Stress",
-        "severity": "moderate",
-        "description": "Possible stress or queen issue.",
-        "action": "Inspect hive physically."
+        "severity": "medium",
+        "description": "Possible colony stress.",
+        "action": "Inspect hive."
     }
 }
 
@@ -74,15 +75,20 @@ def health():
 @app.route('/predict', methods=['POST'])
 def predict():
     try:
-        load_model_once()  # IMPORTANT
+        load_model_once()
 
         if model is None:
             return jsonify({"error": "Model not loaded"}), 500
 
+        # 🔥 FIXED FILE HANDLING
         if 'image' not in request.files:
-            return jsonify({"error": "No image provided"}), 400
+            return jsonify({"error": "No image key found"}), 400
 
-        file = request.files['image']
+        file = request.files.get('image')
+
+        if file.filename == '':
+            return jsonify({"error": "No file selected"}), 400
+
         filepath = os.path.join(UPLOAD_DIR, file.filename)
         file.save(filepath)
 
@@ -114,6 +120,7 @@ def predict():
         })
 
     except Exception as e:
+        print("❌ ERROR:", str(e))  # VERY IMPORTANT
         return jsonify({"error": str(e)}), 500
 
 
