@@ -36,8 +36,8 @@ def load_model_once():
         model = tf.keras.models.load_model(MODEL_PATH)
         print("✅ Model loaded")
 
-# ================= CONFIDENCE THRESHOLD =================
-CONFIDENCE_THRESHOLD = 75   # 🔥 increased (more strict)
+# ================= CONFIDENCE =================
+CONFIDENCE_THRESHOLD = 85   # 🔥 Strong filter
 
 # ================= DISEASE INFO =================
 disease_info = {
@@ -52,12 +52,6 @@ disease_info = {
         "severity": "high",
         "description": "Dangerous mites detected.",
         "action": "Apply treatment immediately."
-    },
-    "other_issue": {
-        "status": "Colony Stress",
-        "severity": "medium",
-        "description": "Possible colony stress.",
-        "action": "Inspect hive."
     }
 }
 
@@ -95,12 +89,12 @@ def predict():
         filepath = os.path.join(UPLOAD_DIR, file.filename)
         file.save(filepath)
 
-        # PREPROCESS
+        # ================= PREPROCESS =================
         img = load_img(filepath, target_size=(224, 224))
         arr = img_to_array(img) / 255.0
         arr = np.expand_dims(arr, axis=0)
 
-        # PREDICT
+        # ================= PREDICT =================
         preds = model.predict(arr, verbose=0)
         confidence = float(np.max(preds)) * 100
         top_idx = int(np.argmax(preds))
@@ -108,9 +102,9 @@ def predict():
 
         print(f"🔍 Prediction: {top_class}, Confidence: {confidence}")
 
-        # 🔥 STRONG VALIDATION (IMPORTANT FIX)
+        # ================= 🔥 NON-BEE FILTER =================
         if confidence < CONFIDENCE_THRESHOLD or top_class == "unknown":
-            print("⚠️ Rejected due to low confidence")
+            print("⚠️ Rejected (Not bee / low confidence)")
             return jsonify({
                 "prediction": "invalid",
                 "status": "Not a bee image",
@@ -120,7 +114,24 @@ def predict():
                 "action": "Please upload a clear bee image."
             })
 
-        # NORMAL OUTPUT
+        # ================= 🔥 SMART OTHER ISSUE =================
+        if top_class == "other_issue":
+            return jsonify({
+                "prediction": "other_issue",
+                "status": "Possible Issue Detected",
+                "severity": "moderate",
+                "confidence": round(confidence, 2),
+                "description": "The system detected abnormalities but cannot confirm exact disease.",
+                "possible_causes": [
+                    "Ant attack",
+                    "Colony stress",
+                    "Environmental disturbance",
+                    "Queen issues"
+                ],
+                "action": "Manual inspection recommended for accurate diagnosis."
+            })
+
+        # ================= NORMAL OUTPUT =================
         info = disease_info.get(top_class, {
             "status": "Unknown",
             "severity": "unknown",
