@@ -15,54 +15,55 @@ CLASS_PATH = os.path.join(BASE_PATH, "class_names.json")
 UPLOAD_DIR = os.path.join(BASE_PATH, "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-# ================= LOAD MODEL =================
-print("🚀 Loading model...")
-try:
-    model = tf.keras.models.load_model(MODEL_PATH)
-    print("✅ Model loaded successfully")
-except Exception as e:
-    print(f"❌ Model load failed: {e}")
-    model = None
-
 # ================= LOAD CLASSES =================
 try:
     with open(CLASS_PATH) as f:
         class_indices = json.load(f)
     classes = {v: k for k, v in class_indices.items()}
-    print("📊 Classes:", classes)
+    print("📊 Classes loaded:", classes)
 except Exception as e:
-    print(f"❌ Class file error: {e}")
+    print("❌ Class file error:", e)
     classes = {}
+
+# ================= MODEL (LAZY LOAD) =================
+model = None
+
+def load_model_once():
+    global model
+    if model is None:
+        print("🚀 Loading model...")
+        model = tf.keras.models.load_model(MODEL_PATH)
+        print("✅ Model loaded")
 
 # ================= DISEASE INFO =================
 disease_info = {
     "healthy": {
         "status": "Healthy Colony",
         "severity": "low",
-        "description": "Your bee colony appears healthy. No disease detected.",
-        "action": "Continue regular monitoring every 2 weeks."
+        "description": "Your bee colony appears healthy.",
+        "action": "Continue regular monitoring."
     },
     "varroa": {
         "status": "Varroa Mite Infestation",
         "severity": "high",
-        "description": "Varroa mites detected. These parasites weaken bees and spread deadly viruses.",
-        "action": "Apply oxalic acid treatment immediately. Re-inspect after 7 days."
+        "description": "Dangerous mites detected.",
+        "action": "Apply treatment immediately."
     },
     "other_issue": {
-        "status": "Colony Stress Detected",
+        "status": "Colony Stress",
         "severity": "moderate",
-        "description": "Signs of colony stress — possible ant problem, robbing, or missing queen.",
-        "action": "Physically inspect the hive. Check queen presence and entrance security."
+        "description": "Possible stress or queen issue.",
+        "action": "Inspect hive physically."
     }
 }
 
-# ================= ROOT ROUTE =================
+# ================= ROOT =================
 @app.route('/')
 def home():
     return "🚀 Kanasu Bee House API is LIVE!"
 
-# ================= HEALTH CHECK =================
-@app.route('/health', methods=['GET'])
+# ================= HEALTH =================
+@app.route('/health')
 def health():
     return jsonify({
         "status": "running",
@@ -73,6 +74,8 @@ def health():
 @app.route('/predict', methods=['POST'])
 def predict():
     try:
+        load_model_once()  # IMPORTANT
+
         if model is None:
             return jsonify({"error": "Model not loaded"}), 500
 
@@ -83,12 +86,12 @@ def predict():
         filepath = os.path.join(UPLOAD_DIR, file.filename)
         file.save(filepath)
 
-        # Preprocess image
+        # Preprocess
         img = load_img(filepath, target_size=(224, 224))
         arr = img_to_array(img) / 255.0
         arr = np.expand_dims(arr, axis=0)
 
-        # Prediction
+        # Predict
         preds = model.predict(arr, verbose=0)
         top_idx = int(np.argmax(preds))
         top_class = classes.get(top_idx, "unknown")
@@ -107,18 +110,14 @@ def predict():
             "severity": info["severity"],
             "confidence": confidence,
             "description": info["description"],
-            "action": info["action"],
-            "all_scores": {
-                classes.get(i, str(i)): round(float(preds[0][i]) * 100, 2)
-                for i in range(len(preds[0]))
-            }
+            "action": info["action"]
         })
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 
-# ================= RENDER PORT FIX =================
-if __name__ == '__main__':
+# ================= RUN =================
+if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
-    app.run(host='0.0.0.0', port=port)
+    app.run(host="0.0.0.0", port=port)
