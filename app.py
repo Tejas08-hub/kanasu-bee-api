@@ -37,7 +37,7 @@ def load_model_once():
         print("✅ Model loaded")
 
 # ================= CONFIDENCE THRESHOLD =================
-CONFIDENCE_THRESHOLD = 70  # 🔥 You can tune (60–80)
+CONFIDENCE_THRESHOLD = 75   # 🔥 increased (more strict)
 
 # ================= DISEASE INFO =================
 disease_info = {
@@ -83,7 +83,7 @@ def predict():
         if model is None:
             return jsonify({"error": "Model not loaded"}), 500
 
-        # 🔥 FILE HANDLING
+        # FILE CHECK
         if 'image' not in request.files:
             return jsonify({"error": "No image key found"}), 400
 
@@ -95,31 +95,32 @@ def predict():
         filepath = os.path.join(UPLOAD_DIR, file.filename)
         file.save(filepath)
 
-        # ================= PREPROCESS =================
+        # PREPROCESS
         img = load_img(filepath, target_size=(224, 224))
         arr = img_to_array(img) / 255.0
         arr = np.expand_dims(arr, axis=0)
 
-        # ================= PREDICT =================
+        # PREDICT
         preds = model.predict(arr, verbose=0)
-        confidence = round(float(np.max(preds)) * 100, 2)
+        confidence = float(np.max(preds)) * 100
         top_idx = int(np.argmax(preds))
         top_class = classes.get(top_idx, "unknown")
 
         print(f"🔍 Prediction: {top_class}, Confidence: {confidence}")
 
-        # ================= 🔥 NON-BEE FILTER =================
-        if confidence < CONFIDENCE_THRESHOLD:
+        # 🔥 STRONG VALIDATION (IMPORTANT FIX)
+        if confidence < CONFIDENCE_THRESHOLD or top_class == "unknown":
+            print("⚠️ Rejected due to low confidence")
             return jsonify({
                 "prediction": "invalid",
                 "status": "Not a bee image",
                 "severity": "none",
-                "confidence": confidence,
+                "confidence": round(confidence, 2),
                 "description": "Uploaded image is not a bee or unclear.",
                 "action": "Please upload a clear bee image."
             })
 
-        # ================= NORMAL OUTPUT =================
+        # NORMAL OUTPUT
         info = disease_info.get(top_class, {
             "status": "Unknown",
             "severity": "unknown",
@@ -131,7 +132,7 @@ def predict():
             "prediction": top_class,
             "status": info["status"],
             "severity": info["severity"],
-            "confidence": confidence,
+            "confidence": round(confidence, 2),
             "description": info["description"],
             "action": info["action"]
         })
