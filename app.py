@@ -2,9 +2,9 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 import numpy as np
 import json, os
-import tensorflow as tf
-# Temporarily disable model loading
-model = None
+import tf_keras
+from tf_keras.preprocessing import image as keras_image
+
 app = Flask(__name__)
 CORS(app)
 
@@ -15,11 +15,17 @@ UPLOAD_DIR = os.path.join(BASE_PATH, "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 print("Loading model...")
-model = tf.keras.models.load_model(MODEL_PATH)
+try:
+    model = tf_keras.models.load_model(MODEL_PATH)
+    print("✅ Model loaded successfully!")
+except Exception as e:
+    print(f"❌ Model load failed: {e}")
+    model = None
+
 with open(CLASS_PATH) as f:
     class_indices = json.load(f)
 classes = {v: k for k, v in class_indices.items()}
-print("✅ Model ready:", classes)
+print("Classes:", classes)
 
 disease_info = {
     "healthy": {
@@ -44,19 +50,39 @@ disease_info = {
 
 @app.route('/predict', methods=['POST'])
 def predict():
+    if model is None:
+        return jsonify({"error": "Model not loaded"}), 500
     if 'image' not in request.files:
-        return jsonify({"error": "No image"}), 400
+        return jsonify({"error": "No image provided"}), 400
+
     file     = request.files['image']
     filepath = os.path.join(UPLOAD_DIR, file.filename)
     file.save(filepath)
+
     img  = keras_image.load_img(filepath, target_size=(224, 224))
     arr  = keras_image.img_to_array(img) / 255.0
     arr  = np.expand_dims(arr, axis=0)
-    preds     = model.predict(arr, verbose=0)
-    top_idx   = int(np.argmax(preds))
-    top_class = classes[top_idx]
-    confidence= round(float(np.max(preds)) * 100, 2)
-    info      = disease_info[top_class]
+
+    preds      = model.predict(arr, verbose=0)
+    top_idx    = int(np.argmax(preds))
+    top_class  = classes[top_idx]
+    confidence = round(float(np.max(preds)) * 100, 2)
+
+    if confidence < 60:
+        return jsonify({
+            "prediction" : "unclear",
+            "status"     : "Unclear Result",
+            "severity"   : "unknown",
+            "confidence" : confidence,
+            "description": "The image quality or angle made it hard to classify. Please retake the photo.",
+            "action"     : "Try again with a clearer, closer photo of the hive.",
+            "all_scores" : {classes[i]: round(float(preds[0][i]) * 100, 2) for i in range(len(classes))}
+        })
+
+    info = disease_info.get(top_class, {
+        "status": "Unknown", "severity": "unknown",
+        "description": "Could not classify.", "action": "Please try again."
+    })
     return jsonify({
         "prediction" : top_class,
         "status"     : info["status"],
@@ -64,16 +90,13 @@ def predict():
         "confidence" : confidence,
         "description": info["description"],
         "action"     : info["action"],
-        "all_scores" : {
-            classes[i]: round(float(preds[0][i]) * 100, 2)
-            for i in range(len(classes))
-        }
+        "all_scores" : {classes[i]: round(float(preds[0][i]) * 100, 2) for i in range(len(classes))}
     })
 
 @app.route('/health', methods=['GET'])
 def health():
-    return jsonify({"status": "running"})
+    return jsonify({"status": "running", "model_loaded": model is not None})
 
 if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 5000))
+    port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
