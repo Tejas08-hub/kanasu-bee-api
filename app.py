@@ -3,8 +3,8 @@ from flask_cors import CORS
 import numpy as np
 import json, os
 import tensorflow as tf
-from tensorflow.keras.preprocessing import image as keras_image
-
+# Temporarily disable model loading
+model = None
 app = Flask(__name__)
 CORS(app)
 
